@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { databases, client } from '../lib/appwrite';
 import { X, Circle, Home, Grid3X3, Share2 } from 'lucide-react';
 import GameChat from './GameChat';
 import GameControls from './GameControls';
 import GameShare from './GameShare';
+import { updatePlayerStats } from '../utils/playerStats';
+import { useSounds } from '../hooks/useSounds';
 
 interface GameBoardProps {
   gameId: string;
@@ -56,6 +58,8 @@ const GameBoard: React.FC<GameBoardProps> = ({ gameId, userId, onQuit }) => {
   const [loading, setLoading] = useState(true);
   const [moving, setMoving] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  const statsUpdated = useRef(false);
+  const { play } = useSounds();
 
   const fetchGame = useCallback(async () => {
     try {
@@ -84,10 +88,33 @@ const GameBoard: React.FC<GameBoardProps> = ({ gameId, userId, onQuit }) => {
     return () => unsubscribe();
   }, [gameId, fetchGame]);
 
+  // Update player stats when game finishes
+  useEffect(() => {
+    if (!game || game.status !== 'finished' || statsUpdated.current) return;
+    
+    const isSinglePlayer = game.playerO === `${userId}-O`;
+    if (isSinglePlayer) return; // Don't track single player stats
+    
+    statsUpdated.current = true;
+    
+    // Determine result and play sound
+    if (game.winner === 'draw') {
+      play('draw');
+      updatePlayerStats(userId, 'draw');
+    } else if (game.winner === userId) {
+      play('win');
+      updatePlayerStats(userId, 'win');
+    } else {
+      play('lose');
+      updatePlayerStats(userId, 'loss');
+    }
+  }, [game, userId, play]);
+
   // Check if game is paused
   const isPaused = game?.controls ? JSON.parse(game.controls).isPaused : false;
 
   const handleRestart = async () => {
+    statsUpdated.current = false; // Reset for new game
     try {
       const newBoard = JSON.stringify({ t: 'ttt', d: Array(9).fill("") });
       await databases.updateDocument('main', 'games', gameId, {
@@ -111,7 +138,7 @@ const GameBoard: React.FC<GameBoardProps> = ({ gameId, userId, onQuit }) => {
     // In multiplayer, check if it's user's turn
     if (!isSinglePlayer && game.turn !== userId) return;
 
-    console.log(`Making move at index ${index} for user ${userId}`);
+    play('move');
     setMoving(true);
     try {
       // Update the game directly in the database

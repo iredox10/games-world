@@ -8,6 +8,11 @@ import RPSBoard from './components/RPSBoard';
 import NimBoard from './components/NimBoard';
 import CoinFlipBoard from './components/CoinFlipBoard';
 import GuessBoard from './components/GuessBoard';
+import PlayerProfile from './components/PlayerProfile';
+import Leaderboard from './components/Leaderboard';
+import GameHistory from './components/GameHistory';
+import { useSounds } from './hooks/useSounds';
+import { Trophy, User, History, Volume2, VolumeX } from 'lucide-react';
 
 function App() {
   const [user, setUser] = useState<any>(null);
@@ -16,6 +21,14 @@ function App() {
   const [currentGameType, setCurrentGameType] = useState<GameType | null>(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  
+  // Modal states
+  const [showProfile, setShowProfile] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  
+  // Sound
+  const { play, toggleMute, isMuted } = useSounds();
 
   // Check for game ID in URL on mount
   useEffect(() => {
@@ -203,18 +216,83 @@ function App() {
             </div>
             
             {user && (
-              <div className="flex items-center gap-3">
-                <div className="hidden sm:block text-right">
-                  <p className="text-xs text-gray-500">Player ID</p>
-                  <p className="text-sm font-mono text-gray-300 truncate max-w-[150px]">{user.$id.slice(0, 8)}...</p>
-                </div>
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center text-sm font-bold">
-                  {user.$id.slice(0, 2).toUpperCase()}
-                </div>
+              <div className="flex items-center gap-2">
+                {/* Sound Toggle */}
+                <button
+                  onClick={() => {
+                    toggleMute();
+                    if (!isMuted) play('click');
+                  }}
+                  className="w-10 h-10 rounded-xl glass flex items-center justify-center hover:bg-white/10 transition-colors"
+                  title={isMuted ? 'Unmute' : 'Mute'}
+                >
+                  {isMuted ? (
+                    <VolumeX className="w-5 h-5 text-gray-500" />
+                  ) : (
+                    <Volume2 className="w-5 h-5 text-gray-400" />
+                  )}
+                </button>
+                
+                {/* History */}
+                <button
+                  onClick={() => {
+                    play('click');
+                    setShowHistory(true);
+                  }}
+                  className="w-10 h-10 rounded-xl glass flex items-center justify-center hover:bg-white/10 transition-colors"
+                  title="Game History"
+                >
+                  <History className="w-5 h-5 text-gray-400" />
+                </button>
+                
+                {/* Leaderboard */}
+                <button
+                  onClick={() => {
+                    play('click');
+                    setShowLeaderboard(true);
+                  }}
+                  className="w-10 h-10 rounded-xl glass flex items-center justify-center hover:bg-white/10 transition-colors"
+                  title="Leaderboard"
+                >
+                  <Trophy className="w-5 h-5 text-yellow-400" />
+                </button>
+                
+                {/* Profile */}
+                <button
+                  onClick={() => {
+                    play('click');
+                    setShowProfile(true);
+                  }}
+                  className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-sm font-bold hover:scale-105 transition-transform"
+                  title="Profile"
+                >
+                  <User className="w-5 h-5 text-white" />
+                </button>
               </div>
             )}
           </div>
         </header>
+
+        {/* Modals */}
+        <PlayerProfile
+          userId={user?.$id || ''}
+          isOpen={showProfile}
+          onClose={() => setShowProfile(false)}
+        />
+        <Leaderboard
+          isOpen={showLeaderboard}
+          onClose={() => setShowLeaderboard(false)}
+          currentUserId={user?.$id || ''}
+        />
+        <GameHistory
+          isOpen={showHistory}
+          onClose={() => setShowHistory(false)}
+          userId={user?.$id || ''}
+          onReplayGame={(id) => {
+            setShowHistory(false);
+            handleJoinGame(id);
+          }}
+        />
 
         {/* Main content area */}
         <main className="flex-1 flex flex-col items-center justify-center px-4 py-8">
