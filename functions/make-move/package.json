@@ -1,0 +1,9 @@
+{
+  "name": "make-move",
+  "version": "1.0.0",
+  "description": "Tic Tac Toe Move Validation",
+  "main": "src/main.js",
+  "dependencies": {
+    "node-appwrite": "^21.1.0"
+  }
+}
