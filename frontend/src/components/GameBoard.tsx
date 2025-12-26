@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { databases, client } from '../lib/appwrite';
-import { X, Circle, Home, Grid3X3 } from 'lucide-react';
+import { X, Circle, Home, Grid3X3, Share2 } from 'lucide-react';
 import GameChat from './GameChat';
+import GameControls from './GameControls';
+import GameShare from './GameShare';
 
 interface GameBoardProps {
   gameId: string;
@@ -53,20 +55,21 @@ const GameBoard: React.FC<GameBoardProps> = ({ gameId, userId, onQuit }) => {
   const [game, setGame] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [moving, setMoving] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+
+  const fetchGame = useCallback(async () => {
+    try {
+      const doc = await databases.getDocument('main', 'games', gameId);
+      setGame(doc);
+    } catch (err) {
+      console.error("Failed to fetch game", err);
+      onQuit();
+    } finally {
+      setLoading(false);
+    }
+  }, [gameId, onQuit]);
 
   useEffect(() => {
-    const fetchGame = async () => {
-      try {
-        const doc = await databases.getDocument('main', 'games', gameId);
-        setGame(doc);
-      } catch (err) {
-        console.error("Failed to fetch game", err);
-        onQuit();
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchGame();
 
     // Subscribe to realtime updates
@@ -79,10 +82,28 @@ const GameBoard: React.FC<GameBoardProps> = ({ gameId, userId, onQuit }) => {
     );
 
     return () => unsubscribe();
-  }, [gameId, onQuit]);
+  }, [gameId, fetchGame]);
+
+  // Check if game is paused
+  const isPaused = game?.controls ? JSON.parse(game.controls).isPaused : false;
+
+  const handleRestart = async () => {
+    try {
+      const newBoard = JSON.stringify({ t: 'ttt', d: Array(9).fill("") });
+      await databases.updateDocument('main', 'games', gameId, {
+        board: newBoard,
+        turn: game.playerX,
+        winner: null,
+        status: 'playing',
+        controls: JSON.stringify({ isPaused: false, pausedBy: null, rematchRequested: null, startTime: Date.now() }),
+      });
+    } catch (err) {
+      console.error("Failed to restart game", err);
+    }
+  };
 
   const makeMove = async (index: number) => {
-    if (moving || game.status !== 'playing') return;
+    if (moving || game.status !== 'playing' || isPaused) return;
     
     // Check if it's a single-player game (playerO ends with '-O' suffix of current user)
     const isSinglePlayer = game.playerO === `${userId}-O`;
@@ -168,7 +189,7 @@ const GameBoard: React.FC<GameBoardProps> = ({ gameId, userId, onQuit }) => {
   const currentSymbol = game.turn === game.playerX ? 'X' : 'O';
 
   return (
-    <div className="flex flex-col items-center gap-6 w-full">
+    <div className="flex flex-col items-center gap-4 w-full">
       {/* Header */}
       <div className="w-full glass rounded-2xl p-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -180,14 +201,43 @@ const GameBoard: React.FC<GameBoardProps> = ({ gameId, userId, onQuit }) => {
             <p className="text-xs text-gray-500 font-mono">{game.$id.slice(0, 8)}...</p>
           </div>
         </div>
-        <button 
-          onClick={onQuit}
-          className="w-10 h-10 rounded-xl glass flex items-center justify-center hover:bg-white/10 transition-colors group"
-          title="Back to Lobby"
-        >
-          <Home size={18} className="text-gray-400 group-hover:text-white transition-colors" />
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Share button - show when waiting for opponent */}
+          {game.status === 'waiting' && (
+            <button 
+              onClick={() => setShowShare(true)}
+              className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center hover:scale-105 transition-all group"
+              title="Invite Friend"
+            >
+              <Share2 size={18} className="text-white" />
+            </button>
+          )}
+          <button 
+            onClick={onQuit}
+            className="w-10 h-10 rounded-xl glass flex items-center justify-center hover:bg-white/10 transition-colors group"
+            title="Back to Lobby"
+          >
+            <Home size={18} className="text-gray-400 group-hover:text-white transition-colors" />
+          </button>
+        </div>
       </div>
+
+      {/* Share Modal */}
+      <GameShare
+        gameId={gameId}
+        gameName="Tic-Tac-Toe"
+        isOpen={showShare}
+        onClose={() => setShowShare(false)}
+      />
+
+      {/* Game Controls */}
+      <GameControls
+        gameId={gameId}
+        userId={userId}
+        game={game}
+        isSinglePlayer={isSinglePlayer}
+        onRestart={handleRestart}
+      />
 
       {/* Status */}
       <div className="text-center py-2">

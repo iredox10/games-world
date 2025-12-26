@@ -17,6 +17,18 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
+  // Check for game ID in URL on mount
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const joinGameId = urlParams.get('join');
+    if (joinGameId) {
+      // Clear the URL parameter without reload
+      window.history.replaceState({}, '', window.location.pathname);
+      // Will join after auth
+      sessionStorage.setItem('pendingJoinGame', joinGameId);
+    }
+  }, []);
+
   useEffect(() => {
     const init = async () => {
       try {
@@ -39,11 +51,33 @@ function App() {
     init();
   }, []);
 
-  const handleJoinGame = async (id: string) => {
+  // Auto-join game from URL after auth is complete
+  useEffect(() => {
+    if (user && !loading) {
+      const pendingJoin = sessionStorage.getItem('pendingJoinGame');
+      if (pendingJoin) {
+        sessionStorage.removeItem('pendingJoinGame');
+        handleJoinGame(pendingJoin);
+      }
+    }
+  }, [user, loading]);
+
+  const handleJoinGame = async (id: string, autoJoin: boolean = false) => {
     // Fetch the game to get its type
     try {
       const game = await databases.getDocument('main', 'games', id);
-      // Extract game type from board field (compact format: {t:'ttt'|'c4'|'rps'|'nim'|'coin'|'guess', d:...})
+      
+      // Auto-join if coming from URL and game is waiting
+      if (autoJoin || game.status === 'waiting') {
+        if (game.playerX !== user?.$id && !game.playerO) {
+          await databases.updateDocument('main', 'games', id, {
+            playerO: user.$id,
+            status: 'playing',
+          });
+        }
+      }
+      
+      // Extract game type from board field
       let gameType: GameType = 'tictactoe';
       try {
         const boardData = JSON.parse(game.board);
@@ -54,11 +88,10 @@ function App() {
         else if (boardData.t === 'coin') gameType = 'coin';
         else if (boardData.t === 'guess') gameType = 'guess';
         else if (boardData.type) {
-          // Old format fallback
           gameType = boardData.type;
         }
       } catch {
-        // Old format or plain array, assume tictactoe
+        // Old format or plain array
       }
       setCurrentGameType(gameType);
       setGameId(id);

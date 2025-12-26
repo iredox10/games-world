@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { databases, client } from '../lib/appwrite';
 import { Home } from 'lucide-react';
 import GameChat from './GameChat';
+import GameControls from './GameControls';
 
 interface ConnectFourBoardProps {
   gameId: string;
@@ -64,19 +65,19 @@ const ConnectFourBoard: React.FC<ConnectFourBoardProps> = ({ gameId, userId, onQ
   const [moving, setMoving] = useState(false);
   const [hoverCol, setHoverCol] = useState<number | null>(null);
 
-  useEffect(() => {
-    const fetchGame = async () => {
-      try {
-        const doc = await databases.getDocument('main', 'games', gameId);
-        setGame(doc);
-      } catch (err) {
-        console.error("Failed to fetch game", err);
-        onQuit();
-      } finally {
-        setLoading(false);
-      }
-    };
+  const fetchGame = async () => {
+    try {
+      const doc = await databases.getDocument('main', 'games', gameId);
+      setGame(doc);
+    } catch (err) {
+      console.error("Failed to fetch game", err);
+      onQuit();
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchGame();
 
     const unsubscribe = client.subscribe(
@@ -88,6 +89,24 @@ const ConnectFourBoard: React.FC<ConnectFourBoardProps> = ({ gameId, userId, onQ
 
     return () => unsubscribe();
   }, [gameId, onQuit]);
+
+  // Check if game is paused
+  const isPaused = game?.controls ? JSON.parse(game.controls).isPaused : false;
+
+  const handleRestart = async () => {
+    try {
+      const newBoard = JSON.stringify({ t: 'c4', d: Array(42).fill("").join(",") });
+      await databases.updateDocument('main', 'games', gameId, {
+        board: newBoard,
+        turn: game.playerX,
+        winner: null,
+        status: 'playing',
+        controls: JSON.stringify({ isPaused: false, pausedBy: null, rematchRequested: null, startTime: Date.now() }),
+      });
+    } catch (err) {
+      console.error("Failed to restart game", err);
+    }
+  };
 
   const checkWinner = (board: string[][]): string | null => {
     // Check horizontal
@@ -130,7 +149,7 @@ const ConnectFourBoard: React.FC<ConnectFourBoardProps> = ({ gameId, userId, onQ
   };
 
   const makeMove = async (col: number) => {
-    if (moving || game.status !== 'playing') return;
+    if (moving || game.status !== 'playing' || isPaused) return;
 
     const isSinglePlayer = game.playerO === `${userId}-O`;
     if (!isSinglePlayer && game.turn !== userId) return;
@@ -189,7 +208,7 @@ const ConnectFourBoard: React.FC<ConnectFourBoardProps> = ({ gameId, userId, onQ
   const currentSymbol = game.turn === game.playerX ? 'Red' : 'Yellow';
 
   return (
-    <div className="flex flex-col items-center gap-6 w-full max-w-lg">
+    <div className="flex flex-col items-center gap-4 w-full max-w-lg">
       <div className="flex justify-between w-full items-center bg-gray-800 p-4 rounded-lg border border-gray-700">
         <div className="flex flex-col">
           <span className="text-sm text-gray-400">Game ID</span>
@@ -203,6 +222,15 @@ const ConnectFourBoard: React.FC<ConnectFourBoardProps> = ({ gameId, userId, onQ
           <Home size={20} />
         </button>
       </div>
+
+      {/* Game Controls */}
+      <GameControls
+        gameId={gameId}
+        userId={userId}
+        game={game}
+        isSinglePlayer={isSinglePlayer}
+        onRestart={handleRestart}
+      />
 
       <div className="text-center">
         {game.status === 'waiting' ? (
