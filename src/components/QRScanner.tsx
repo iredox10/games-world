@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { X, Camera, SwitchCamera, Flashlight } from 'lucide-react';
+import { X, Camera, SwitchCamera } from 'lucide-react';
 
 interface QRScannerProps {
   isOpen: boolean;
