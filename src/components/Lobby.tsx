@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { databases, ID, Permission, Role } from '../lib/appwrite';
 import { type GameType } from './GameSelector';
+import { ScanLine } from 'lucide-react';
+import QRScanner from './QRScanner';
 
 interface LobbyProps {
   gameType: GameType;
@@ -21,6 +23,7 @@ const gameNames: Record<GameType, string> = {
 const Lobby: React.FC<LobbyProps> = ({ gameType, onJoinGame, onBack, userId }) => {
   const [joinId, setJoinId] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
 
   const getInitialBoard = (gameType: GameType) => {
     switch (gameType) {
@@ -87,6 +90,26 @@ const Lobby: React.FC<LobbyProps> = ({ gameType, onJoinGame, onBack, userId }) =
       onJoinGame(joinId);
     } catch (err) {
       console.error("Failed to join game", err);
+      alert("Game not found or failed to join");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleQRScan = async (scannedGameId: string) => {
+    setLoading(true);
+    try {
+      const game = await databases.getDocument('main', 'games', scannedGameId);
+      
+      if (game.status === 'waiting' && game.playerX !== userId) {
+        await databases.updateDocument('main', 'games', scannedGameId, {
+          playerO: userId,
+          status: 'playing',
+        });
+      }
+      onJoinGame(scannedGameId);
+    } catch (err) {
+      console.error("Failed to join game from QR", err);
       alert("Game not found or failed to join");
     } finally {
       setLoading(false);
@@ -170,16 +193,27 @@ const Lobby: React.FC<LobbyProps> = ({ gameType, onJoinGame, onBack, userId }) =
 
       {/* Join section */}
       <div className="glass rounded-2xl p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center">
-            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-            </svg>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-white">Join Game</h3>
+              <p className="text-xs text-gray-500">Enter code or scan QR</p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-lg font-semibold text-white">Join Game</h3>
-            <p className="text-xs text-gray-500">Enter a game code to join</p>
-          </div>
+          {/* Scan QR button */}
+          <button
+            onClick={() => setShowScanner(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-medium transition-all"
+            title="Scan QR Code"
+          >
+            <ScanLine className="w-5 h-5" />
+            <span className="hidden sm:inline text-sm">Scan QR</span>
+          </button>
         </div>
         
         <form onSubmit={joinGame} className="space-y-4">
@@ -213,6 +247,13 @@ const Lobby: React.FC<LobbyProps> = ({ gameType, onJoinGame, onBack, userId }) =
           </button>
         </form>
       </div>
+
+      {/* QR Scanner Modal */}
+      <QRScanner
+        isOpen={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScan={handleQRScan}
+      />
       
       {/* Tips */}
       <div className="glass-dark rounded-xl p-4 flex items-start gap-3">
