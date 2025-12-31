@@ -1,7 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { databases, client } from '../lib/appwrite';
-import { Home, Target } from 'lucide-react';
+import { Home, Target, Share2 } from 'lucide-react';
 import GameChat from './GameChat';
+import GameControls from './GameControls';
+import GameShare from './GameShare';
+import { updatePlayerStats } from '../utils/playerStats';
+import { useSounds } from '../hooks/useSounds';
 
 interface GuessBoardProps {
   gameId: string;
@@ -42,20 +46,23 @@ const GuessBoard: React.FC<GuessBoardProps> = ({ gameId, userId, onQuit }) => {
   const [loading, setLoading] = useState(true);
   const [guessing, setGuessing] = useState(false);
   const [selectedNum, setSelectedNum] = useState<number | null>(null);
+  const [showShare, setShowShare] = useState(false);
+  const statsUpdated = useRef(false);
+  const { play } = useSounds();
+
+  const fetchGame = async () => {
+    try {
+      const doc = await databases.getDocument('main', 'games', gameId);
+      setGame(doc);
+    } catch (err) {
+      console.error("Failed to fetch game", err);
+      onQuit();
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchGame = async () => {
-      try {
-        const doc = await databases.getDocument('main', 'games', gameId);
-        setGame(doc);
-      } catch (err) {
-        console.error("Failed to fetch game", err);
-        onQuit();
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchGame();
 
     const unsubscribe = client.subscribe(
@@ -68,9 +75,47 @@ const GuessBoard: React.FC<GuessBoardProps> = ({ gameId, userId, onQuit }) => {
     return () => unsubscribe();
   }, [gameId, onQuit]);
 
-  const makeGuess = async () => {
-    if (guessing || game.status !== 'playing' || selectedNum === null) return;
+  // Update player stats when game finishes
+  useEffect(() => {
+    if (!game || game.status !== 'finished' || statsUpdated.current) return;
+    
+    const isSinglePlayer = game.playerO === `${userId}-O`;
+    if (isSinglePlayer) return;
+    
+    statsUpdated.current = true;
+    
+    if (game.winner === userId) {
+      play('win');
+      updatePlayerStats(userId, 'win');
+    } else {
+      play('lose');
+      updatePlayerStats(userId, 'loss');
+    }
+  }, [game, userId, play]);
 
+  // Check if game is paused
+  const isPaused = game?.controls ? JSON.parse(game.controls).isPaused : false;
+
+  const handleRestart = async () => {
+    statsUpdated.current = false;
+    try {
+      const newBoard = serializeBoardData({ n: Math.floor(Math.random() * 10) + 1, g1: null, g2: null, s1: 0, s2: 0, rd: 0, w: null });
+      await databases.updateDocument('main', 'games', gameId, {
+        board: newBoard,
+        turn: game.playerX,
+        winner: null,
+        status: 'playing',
+        controls: JSON.stringify({ isPaused: false, pausedBy: null, rematchRequested: null, startTime: Date.now() }),
+      });
+    } catch (err) {
+      console.error("Failed to restart game", err);
+    }
+  };
+
+  const makeGuess = async () => {
+    if (guessing || game.status !== 'playing' || selectedNum === null || isPaused) return;
+
+    play('move');
     const isSinglePlayer = game.playerO === `${userId}-O`;
     const state = parseBoardData(game.board);
     const isPlayer1 = game.playerX === userId;
@@ -198,35 +243,69 @@ const GuessBoard: React.FC<GuessBoardProps> = ({ gameId, userId, onQuit }) => {
   const bothGuessed = state.g1 !== null && state.g2 !== null;
 
   return (
-    <div className="flex flex-col items-center gap-6 w-full max-w-md">
-      <div className="flex justify-between w-full items-center bg-gray-800 p-4 rounded-lg border border-gray-700">
-        <div className="flex flex-col">
-          <span className="text-sm text-gray-400">Game ID</span>
-          <span className="font-mono text-xs select-all">{game.$id}</span>
+    <div className="flex flex-col items-center gap-4 w-full max-w-md">
+      {/* Header */}
+      <div className="w-full glass rounded-2xl p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
+            <Target className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-white">Number Guess</h3>
+            <p className="text-xs text-gray-500 font-mono">{game.$id.slice(0, 8)}...</p>
+          </div>
         </div>
-        <button 
-          onClick={onQuit}
-          className="p-2 hover:bg-gray-700 rounded-full transition-colors"
-          title="Back to Lobby"
-        >
-          <Home size={20} />
-        </button>
+        <div className="flex items-center gap-2">
+          {game.status === 'waiting' && (
+            <button 
+              onClick={() => setShowShare(true)}
+              className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center hover:scale-105 transition-all"
+              title="Invite Friend"
+            >
+              <Share2 size={18} className="text-white" />
+            </button>
+          )}
+          <button 
+            onClick={onQuit}
+            className="w-10 h-10 rounded-xl glass flex items-center justify-center hover:bg-white/10 transition-colors group"
+            title="Back to Lobby"
+          >
+            <Home size={18} className="text-gray-400 group-hover:text-white transition-colors" />
+          </button>
+        </div>
       </div>
+
+      {/* Share Modal */}
+      <GameShare
+        gameId={gameId}
+        gameName="Number Guess"
+        isOpen={showShare}
+        onClose={() => setShowShare(false)}
+      />
+
+      {/* Game Controls */}
+      <GameControls
+        gameId={gameId}
+        userId={userId}
+        game={game}
+        isSinglePlayer={isSinglePlayer}
+        onRestart={handleRestart}
+      />
 
       {/* Score */}
-      <div className="flex justify-center gap-8 text-2xl font-bold">
+      <div className="flex justify-center gap-8 glass rounded-xl p-4">
         <div className="text-center">
-          <div className="text-sm text-gray-400">You</div>
-          <div className="text-blue-400">{isPlayer1 ? state.s1 : state.s2}</div>
+          <div className="text-xs text-gray-500 uppercase">You</div>
+          <div className="text-3xl font-bold text-blue-400">{isPlayer1 ? state.s1 : state.s2}</div>
         </div>
-        <div className="text-gray-500">vs</div>
+        <div className="text-gray-600 text-2xl font-bold self-center">vs</div>
         <div className="text-center">
-          <div className="text-sm text-gray-400">{isSinglePlayer ? 'AI' : 'Opponent'}</div>
-          <div className="text-red-400">{isPlayer1 ? state.s2 : state.s1}</div>
+          <div className="text-xs text-gray-500 uppercase">{isSinglePlayer ? 'AI' : 'Opponent'}</div>
+          <div className="text-3xl font-bold text-red-400">{isPlayer1 ? state.s2 : state.s1}</div>
         </div>
       </div>
 
-      <div className="text-gray-400 text-center">
+      <div className="text-gray-500 text-sm text-center">
         Guess the secret number! Closest wins.<br/>
         First to 3 wins! (Round {state.rd + 1})
       </div>

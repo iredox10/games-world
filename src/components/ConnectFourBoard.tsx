@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { databases, client } from '../lib/appwrite';
-import { Home } from 'lucide-react';
+import { Home, Share2, Circle } from 'lucide-react';
 import GameChat from './GameChat';
 import GameControls from './GameControls';
+import GameShare from './GameShare';
+import { updatePlayerStats } from '../utils/playerStats';
+import { useSounds } from '../hooks/useSounds';
 
 interface ConnectFourBoardProps {
   gameId: string;
@@ -64,6 +67,9 @@ const ConnectFourBoard: React.FC<ConnectFourBoardProps> = ({ gameId, userId, onQ
   const [loading, setLoading] = useState(true);
   const [moving, setMoving] = useState(false);
   const [hoverCol, setHoverCol] = useState<number | null>(null);
+  const [showShare, setShowShare] = useState(false);
+  const statsUpdated = useRef(false);
+  const { play } = useSounds();
 
   const fetchGame = async () => {
     try {
@@ -90,10 +96,32 @@ const ConnectFourBoard: React.FC<ConnectFourBoardProps> = ({ gameId, userId, onQ
     return () => unsubscribe();
   }, [gameId, onQuit]);
 
+  // Update player stats when game finishes
+  useEffect(() => {
+    if (!game || game.status !== 'finished' || statsUpdated.current) return;
+    
+    const isSinglePlayer = game.playerO === `${userId}-O`;
+    if (isSinglePlayer) return;
+    
+    statsUpdated.current = true;
+    
+    if (game.winner === 'draw') {
+      play('draw');
+      updatePlayerStats(userId, 'draw');
+    } else if (game.winner === userId) {
+      play('win');
+      updatePlayerStats(userId, 'win');
+    } else {
+      play('lose');
+      updatePlayerStats(userId, 'loss');
+    }
+  }, [game, userId, play]);
+
   // Check if game is paused
   const isPaused = game?.controls ? JSON.parse(game.controls).isPaused : false;
 
   const handleRestart = async () => {
+    statsUpdated.current = false;
     try {
       const newBoard = JSON.stringify({ t: 'c4', d: Array(42).fill("").join(",") });
       await databases.updateDocument('main', 'games', gameId, {
@@ -167,6 +195,7 @@ const ConnectFourBoard: React.FC<ConnectFourBoardProps> = ({ gameId, userId, onQ
     
     if (row === -1) return; // Column is full
 
+    play('move');
     setMoving(true);
     try {
       const currentPlayer = game.turn === game.playerX ? 'R' : 'Y'; // Red or Yellow
@@ -209,19 +238,44 @@ const ConnectFourBoard: React.FC<ConnectFourBoardProps> = ({ gameId, userId, onQ
 
   return (
     <div className="flex flex-col items-center gap-4 w-full max-w-lg">
-      <div className="flex justify-between w-full items-center bg-gray-800 p-4 rounded-lg border border-gray-700">
-        <div className="flex flex-col">
-          <span className="text-sm text-gray-400">Game ID</span>
-          <span className="font-mono text-xs select-all">{game.$id}</span>
+      {/* Header */}
+      <div className="w-full glass rounded-2xl p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center">
+            <Circle className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-white">Connect Four</h3>
+            <p className="text-xs text-gray-500 font-mono">{game.$id.slice(0, 8)}...</p>
+          </div>
         </div>
-        <button 
-          onClick={onQuit}
-          className="p-2 hover:bg-gray-700 rounded-full transition-colors"
-          title="Back to Lobby"
-        >
-          <Home size={20} />
-        </button>
+        <div className="flex items-center gap-2">
+          {game.status === 'waiting' && (
+            <button 
+              onClick={() => setShowShare(true)}
+              className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center hover:scale-105 transition-all"
+              title="Invite Friend"
+            >
+              <Share2 size={18} className="text-white" />
+            </button>
+          )}
+          <button 
+            onClick={onQuit}
+            className="w-10 h-10 rounded-xl glass flex items-center justify-center hover:bg-white/10 transition-colors group"
+            title="Back to Lobby"
+          >
+            <Home size={18} className="text-gray-400 group-hover:text-white transition-colors" />
+          </button>
+        </div>
       </div>
+
+      {/* Share Modal */}
+      <GameShare
+        gameId={gameId}
+        gameName="Connect Four"
+        isOpen={showShare}
+        onClose={() => setShowShare(false)}
+      />
 
       {/* Game Controls */}
       <GameControls
@@ -232,23 +286,30 @@ const ConnectFourBoard: React.FC<ConnectFourBoardProps> = ({ gameId, userId, onQ
         onRestart={handleRestart}
       />
 
-      <div className="text-center">
+      {/* Status */}
+      <div className="text-center py-2">
         {game.status === 'waiting' ? (
-          <div className="animate-pulse text-yellow-500 font-semibold">
-            Waiting for opponent...
+          <div className="flex items-center gap-3 px-6 py-3 rounded-full glass">
+            <div className="w-3 h-3 bg-yellow-500 rounded-full animate-pulse" />
+            <span className="text-yellow-400 font-medium">Waiting for opponent...</span>
           </div>
         ) : game.status === 'finished' ? (
-          <div className="text-2xl font-bold text-green-500">
-            {game.winner === 'draw' ? "It's a Draw!" : game.winner === userId ? "You Won! 🎉" : "Opponent Won!"}
+          <div className={`px-6 py-3 rounded-full ${game.winner === 'draw' ? 'bg-gray-500/20' : game.winner === userId ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
+            <span className={`text-xl font-bold ${game.winner === 'draw' ? 'text-gray-300' : game.winner === userId ? 'text-green-400' : 'text-red-400'}`}>
+              {game.winner === 'draw' ? "It's a Draw!" : game.winner === userId ? "You Won! 🎉" : "Opponent Won!"}
+            </span>
           </div>
         ) : (
-          <div className={`text-xl font-semibold ${isMyTurn ? 'text-blue-400' : 'text-gray-400'}`}>
-            {isSinglePlayer ? `${currentSymbol}'s Turn` : (isMyTurn ? "Your Turn" : "Opponent's Turn")}
+          <div className={`px-6 py-3 rounded-full ${isMyTurn ? 'bg-indigo-500/20' : 'bg-gray-500/20'}`}>
+            <span className={`font-semibold ${isMyTurn ? 'text-indigo-400' : 'text-gray-400'}`}>
+              {isSinglePlayer ? `${currentSymbol}'s Turn` : (isMyTurn ? "Your Turn" : "Opponent's Turn")}
+            </span>
           </div>
         )}
       </div>
 
-      <div className="bg-blue-900 p-2 rounded-xl shadow-2xl">
+      {/* Game Board */}
+      <div className="bg-gradient-to-br from-blue-800 to-blue-900 p-3 rounded-2xl shadow-2xl border border-blue-700/50">
         <div className="grid grid-cols-7 gap-1">
           {Array.from({ length: COLS }).map((_, col) => (
             <button

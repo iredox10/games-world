@@ -1,0 +1,12 @@
+[build]
+  command = "bun install && bun run build"
+  publish = "dist"
+
+[env.production]
+  VITE_APPWRITE_PROJECT_ID = "694d5a26002e778071ed"
+  VITE_APPWRITE_ENDPOINT = "https://fra.cloud.appwrite.io/v1"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

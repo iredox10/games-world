@@ -1,7 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { databases, client } from '../lib/appwrite';
-import { Home, Hand, Scissors, FileText } from 'lucide-react';
+import { Home, Hand, Scissors, FileText, Share2 } from 'lucide-react';
 import GameChat from './GameChat';
+import GameControls from './GameControls';
+import GameShare from './GameShare';
+import { updatePlayerStats } from '../utils/playerStats';
+import { useSounds } from '../hooks/useSounds';
 
 interface RPSBoardProps {
   gameId: string;
@@ -96,20 +100,23 @@ const RPSBoard: React.FC<RPSBoardProps> = ({ gameId, userId, onQuit }) => {
   const [loading, setLoading] = useState(true);
   const [choosing, setChoosing] = useState(false);
   const [showResult, setShowResult] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const statsUpdated = useRef(false);
+  const { play } = useSounds();
+
+  const fetchGame = async () => {
+    try {
+      const doc = await databases.getDocument('main', 'games', gameId);
+      setGame(doc);
+    } catch (err) {
+      console.error("Failed to fetch game", err);
+      onQuit();
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchGame = async () => {
-      try {
-        const doc = await databases.getDocument('main', 'games', gameId);
-        setGame(doc);
-      } catch (err) {
-        console.error("Failed to fetch game", err);
-        onQuit();
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchGame();
 
     const unsubscribe = client.subscribe(
@@ -121,6 +128,46 @@ const RPSBoard: React.FC<RPSBoardProps> = ({ gameId, userId, onQuit }) => {
 
     return () => unsubscribe();
   }, [gameId, onQuit]);
+
+  // Update player stats when game finishes
+  useEffect(() => {
+    if (!game || game.status !== 'finished' || statsUpdated.current) return;
+    
+    const isSinglePlayer = game.playerO === `${userId}-O`;
+    if (isSinglePlayer) return;
+    
+    statsUpdated.current = true;
+    
+    if (game.winner === 'draw') {
+      play('draw');
+      updatePlayerStats(userId, 'draw');
+    } else if (game.winner === userId) {
+      play('win');
+      updatePlayerStats(userId, 'win');
+    } else {
+      play('lose');
+      updatePlayerStats(userId, 'loss');
+    }
+  }, [game, userId, play]);
+
+  // Check if game is paused
+  const isPaused = game?.controls ? JSON.parse(game.controls).isPaused : false;
+
+  const handleRestart = async () => {
+    statsUpdated.current = false;
+    try {
+      const newBoard = JSON.stringify({ t: 'rps', d: { p1: null, p2: null, s1: 0, s2: 0, r: 1, w: null } });
+      await databases.updateDocument('main', 'games', gameId, {
+        board: newBoard,
+        turn: game.playerX,
+        winner: null,
+        status: 'playing',
+        controls: JSON.stringify({ isPaused: false, pausedBy: null, rematchRequested: null, startTime: Date.now() }),
+      });
+    } catch (err) {
+      console.error("Failed to restart game", err);
+    }
+  };
 
   const getWinner = (choice1: Choice, choice2: Choice): 'player1' | 'player2' | 'draw' => {
     if (choice1 === choice2) return 'draw';
@@ -135,8 +182,9 @@ const RPSBoard: React.FC<RPSBoardProps> = ({ gameId, userId, onQuit }) => {
   };
 
   const makeChoice = async (choice: Choice) => {
-    if (choosing || game.status !== 'playing') return;
+    if (choosing || game.status !== 'playing' || isPaused) return;
 
+    play('move');
     const isSinglePlayer = game.playerO === `${userId}-O`;
     const state: RPSState = parseBoardData(game.board);
     
@@ -271,57 +319,97 @@ const RPSBoard: React.FC<RPSBoardProps> = ({ gameId, userId, onQuit }) => {
   const bothChosen = state.player1Choice && state.player2Choice;
 
   return (
-    <div className="flex flex-col items-center gap-6 w-full max-w-md">
-      <div className="flex justify-between w-full items-center bg-gray-800 p-4 rounded-lg border border-gray-700">
-        <div className="flex flex-col">
-          <span className="text-sm text-gray-400">Game ID</span>
-          <span className="font-mono text-xs select-all">{game.$id}</span>
+    <div className="flex flex-col items-center gap-4 w-full max-w-md">
+      {/* Header */}
+      <div className="w-full glass rounded-2xl p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center">
+            <Hand className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-white">Rock Paper Scissors</h3>
+            <p className="text-xs text-gray-500 font-mono">{game.$id.slice(0, 8)}...</p>
+          </div>
         </div>
-        <button 
-          onClick={onQuit}
-          className="p-2 hover:bg-gray-700 rounded-full transition-colors"
-          title="Back to Lobby"
-        >
-          <Home size={20} />
-        </button>
+        <div className="flex items-center gap-2">
+          {game.status === 'waiting' && (
+            <button 
+              onClick={() => setShowShare(true)}
+              className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center hover:scale-105 transition-all"
+              title="Invite Friend"
+            >
+              <Share2 size={18} className="text-white" />
+            </button>
+          )}
+          <button 
+            onClick={onQuit}
+            className="w-10 h-10 rounded-xl glass flex items-center justify-center hover:bg-white/10 transition-colors group"
+            title="Back to Lobby"
+          >
+            <Home size={18} className="text-gray-400 group-hover:text-white transition-colors" />
+          </button>
+        </div>
       </div>
+
+      {/* Share Modal */}
+      <GameShare
+        gameId={gameId}
+        gameName="Rock Paper Scissors"
+        isOpen={showShare}
+        onClose={() => setShowShare(false)}
+      />
+
+      {/* Game Controls */}
+      <GameControls
+        gameId={gameId}
+        userId={userId}
+        game={game}
+        isSinglePlayer={isSinglePlayer}
+        onRestart={handleRestart}
+      />
 
       {/* Score */}
-      <div className="flex justify-center gap-8 text-2xl font-bold">
+      <div className="flex justify-center gap-8 glass rounded-xl p-4">
         <div className={`text-center ${isPlayer1 ? 'text-blue-400' : 'text-gray-400'}`}>
-          <div className="text-sm text-gray-400">You</div>
-          <div>{isPlayer1 ? state.player1Score : state.player2Score}</div>
+          <div className="text-xs text-gray-500 uppercase">You</div>
+          <div className="text-3xl font-bold">{isPlayer1 ? state.player1Score : state.player2Score}</div>
         </div>
-        <div className="text-gray-500">vs</div>
+        <div className="text-gray-600 text-2xl font-bold self-center">vs</div>
         <div className={`text-center ${!isPlayer1 ? 'text-red-400' : 'text-gray-400'}`}>
-          <div className="text-sm text-gray-400">{isSinglePlayer ? 'AI' : 'Opponent'}</div>
-          <div>{isPlayer1 ? state.player2Score : state.player1Score}</div>
+          <div className="text-xs text-gray-500 uppercase">{isSinglePlayer ? 'AI' : 'Opponent'}</div>
+          <div className="text-3xl font-bold">{isPlayer1 ? state.player2Score : state.player1Score}</div>
         </div>
       </div>
 
-      <div className="text-gray-400">Round {state.round + 1} of 3 (Best of 3)</div>
+      <div className="text-gray-500 text-sm">Round {state.round + 1} of 3 (Best of 3)</div>
 
       {/* Status */}
-      <div className="text-center">
+      <div className="text-center py-2">
         {game.status === 'waiting' ? (
-          <div className="animate-pulse text-yellow-500 font-semibold">
-            Waiting for opponent...
+          <div className="flex items-center gap-3 px-6 py-3 rounded-full glass">
+            <div className="w-3 h-3 bg-yellow-500 rounded-full animate-pulse" />
+            <span className="text-yellow-400 font-medium">Waiting for opponent...</span>
           </div>
         ) : game.status === 'finished' ? (
-          <div className="text-2xl font-bold text-green-500">
-            {game.winner === userId ? "You Won! 🎉" : "Opponent Won!"}
+          <div className={`px-6 py-3 rounded-full ${game.winner === userId ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
+            <span className={`text-xl font-bold ${game.winner === userId ? 'text-green-400' : 'text-red-400'}`}>
+              {game.winner === userId ? "You Won the Match! 🎉" : "Opponent Won the Match!"}
+            </span>
           </div>
         ) : bothChosen || showResult ? (
-          <div className="text-xl font-semibold text-yellow-400">
-            {state.roundWinner === 'draw' ? "Draw!" : state.roundWinner === userId ? "You win this round!" : "Opponent wins this round!"}
+          <div className={`px-6 py-3 rounded-full ${state.roundWinner === 'draw' ? 'bg-gray-500/20' : state.roundWinner === userId ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
+            <span className={`font-semibold ${state.roundWinner === 'draw' ? 'text-gray-400' : state.roundWinner === userId ? 'text-green-400' : 'text-red-400'}`}>
+              {state.roundWinner === 'draw' ? "Draw!" : state.roundWinner === userId ? "You win this round!" : "Opponent wins this round!"}
+            </span>
           </div>
-        ) : hasChosen ? (
-          <div className="text-xl font-semibold text-gray-400">
-            Waiting for opponent...
+        ) : hasChosen && !bothChosen ? (
+          <div className="flex items-center gap-3 px-6 py-3 rounded-full glass">
+            <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse" />
+            <span className="text-blue-400 font-medium">Waiting for opponent's choice...</span>
           </div>
         ) : (
-          <div className="text-xl font-semibold text-blue-400">
-            Make your choice!
+          <div className="px-6 py-3 rounded-full bg-indigo-500/20">
+            <span className="text-indigo-400 font-medium">Make your choice!</span>
           </div>
         )}
       </div>

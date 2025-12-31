@@ -1,7 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { databases, client } from '../lib/appwrite';
-import { Home, Minus } from 'lucide-react';
+import { Home, Minus, Share2 } from 'lucide-react';
 import GameChat from './GameChat';
+import GameControls from './GameControls';
+import GameShare from './GameShare';
+import { updatePlayerStats } from '../utils/playerStats';
+import { useSounds } from '../hooks/useSounds';
 
 interface NimBoardProps {
   gameId: string;
@@ -33,20 +37,23 @@ const NimBoard: React.FC<NimBoardProps> = ({ gameId, userId, onQuit }) => {
   const [game, setGame] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [moving, setMoving] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const statsUpdated = useRef(false);
+  const { play } = useSounds();
+
+  const fetchGame = async () => {
+    try {
+      const doc = await databases.getDocument('main', 'games', gameId);
+      setGame(doc);
+    } catch (err) {
+      console.error("Failed to fetch game", err);
+      onQuit();
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchGame = async () => {
-      try {
-        const doc = await databases.getDocument('main', 'games', gameId);
-        setGame(doc);
-      } catch (err) {
-        console.error("Failed to fetch game", err);
-        onQuit();
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchGame();
 
     const unsubscribe = client.subscribe(
@@ -59,8 +66,45 @@ const NimBoard: React.FC<NimBoardProps> = ({ gameId, userId, onQuit }) => {
     return () => unsubscribe();
   }, [gameId, onQuit]);
 
+  // Update player stats when game finishes
+  useEffect(() => {
+    if (!game || game.status !== 'finished' || statsUpdated.current) return;
+    
+    const isSinglePlayer = game.playerO === `${userId}-O`;
+    if (isSinglePlayer) return;
+    
+    statsUpdated.current = true;
+    
+    if (game.winner === userId) {
+      play('win');
+      updatePlayerStats(userId, 'win');
+    } else {
+      play('lose');
+      updatePlayerStats(userId, 'loss');
+    }
+  }, [game, userId, play]);
+
+  // Check if game is paused
+  const isPaused = game?.controls ? JSON.parse(game.controls).isPaused : false;
+
+  const handleRestart = async () => {
+    statsUpdated.current = false;
+    try {
+      const newBoard = serializeBoardData(15);
+      await databases.updateDocument('main', 'games', gameId, {
+        board: newBoard,
+        turn: game.playerX,
+        winner: null,
+        status: 'playing',
+        controls: JSON.stringify({ isPaused: false, pausedBy: null, rematchRequested: null, startTime: Date.now() }),
+      });
+    } catch (err) {
+      console.error("Failed to restart game", err);
+    }
+  };
+
   const takeSticks = async (count: number) => {
-    if (moving || game.status !== 'playing') return;
+    if (moving || game.status !== 'playing' || isPaused) return;
 
     const isSinglePlayer = game.playerO === `${userId}-O`;
     if (!isSinglePlayer && game.turn !== userId) return;
@@ -68,6 +112,7 @@ const NimBoard: React.FC<NimBoardProps> = ({ gameId, userId, onQuit }) => {
     const sticks = parseBoardData(game.board);
     if (count > sticks) return;
 
+    play('move');
     setMoving(true);
     try {
       const newSticks = sticks - count;
@@ -133,43 +178,85 @@ const NimBoard: React.FC<NimBoardProps> = ({ gameId, userId, onQuit }) => {
   const isMyTurn = isSinglePlayer ? game.turn === game.playerX : game.turn === userId;
 
   return (
-    <div className="flex flex-col items-center gap-6 w-full max-w-md">
-      <div className="flex justify-between w-full items-center bg-gray-800 p-4 rounded-lg border border-gray-700">
-        <div className="flex flex-col">
-          <span className="text-sm text-gray-400">Game ID</span>
-          <span className="font-mono text-xs select-all">{game.$id}</span>
+    <div className="flex flex-col items-center gap-4 w-full max-w-md">
+      {/* Header */}
+      <div className="w-full glass rounded-2xl p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center">
+            <Minus className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-white">Nim</h3>
+            <p className="text-xs text-gray-500 font-mono">{game.$id.slice(0, 8)}...</p>
+          </div>
         </div>
-        <button 
-          onClick={onQuit}
-          className="p-2 hover:bg-gray-700 rounded-full transition-colors"
-          title="Back to Lobby"
-        >
-          <Home size={20} />
-        </button>
+        <div className="flex items-center gap-2">
+          {game.status === 'waiting' && (
+            <button 
+              onClick={() => setShowShare(true)}
+              className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center hover:scale-105 transition-all"
+              title="Invite Friend"
+            >
+              <Share2 size={18} className="text-white" />
+            </button>
+          )}
+          <button 
+            onClick={onQuit}
+            className="w-10 h-10 rounded-xl glass flex items-center justify-center hover:bg-white/10 transition-colors group"
+            title="Back to Lobby"
+          >
+            <Home size={18} className="text-gray-400 group-hover:text-white transition-colors" />
+          </button>
+        </div>
       </div>
 
-      <div className="text-center">
-        <div className="text-gray-400 mb-2">Take 1-3 sticks. Don't take the last one!</div>
+      {/* Share Modal */}
+      <GameShare
+        gameId={gameId}
+        gameName="Nim"
+        isOpen={showShare}
+        onClose={() => setShowShare(false)}
+      />
+
+      {/* Game Controls */}
+      <GameControls
+        gameId={gameId}
+        userId={userId}
+        game={game}
+        isSinglePlayer={isSinglePlayer}
+        onRestart={handleRestart}
+      />
+
+      {/* Info */}
+      <div className="text-gray-500 text-sm text-center">Take 1-3 sticks. Don't take the last one!</div>
+
+      {/* Status */}
+      <div className="text-center py-2">
         {game.status === 'waiting' ? (
-          <div className="animate-pulse text-yellow-500 font-semibold">
-            Waiting for opponent...
+          <div className="flex items-center gap-3 px-6 py-3 rounded-full glass">
+            <div className="w-3 h-3 bg-yellow-500 rounded-full animate-pulse" />
+            <span className="text-yellow-400 font-medium">Waiting for opponent...</span>
           </div>
         ) : game.status === 'finished' ? (
-          <div className="text-2xl font-bold text-green-500">
-            {game.winner === userId ? "You Won! 🎉" : "You Lost!"}
+          <div className={`px-6 py-3 rounded-full ${game.winner === userId ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
+            <span className={`text-xl font-bold ${game.winner === userId ? 'text-green-400' : 'text-red-400'}`}>
+              {game.winner === userId ? "You Won! 🎉" : "You Lost!"}
+            </span>
           </div>
         ) : (
-          <div className={`text-xl font-semibold ${isMyTurn ? 'text-blue-400' : 'text-gray-400'}`}>
-            {isMyTurn ? "Your Turn" : (isSinglePlayer ? "AI Thinking..." : "Opponent's Turn")}
+          <div className={`px-6 py-3 rounded-full ${isMyTurn ? 'bg-indigo-500/20' : 'bg-gray-500/20'}`}>
+            <span className={`font-semibold ${isMyTurn ? 'text-indigo-400' : 'text-gray-400'}`}>
+              {isMyTurn ? "Your Turn" : (isSinglePlayer ? "AI Thinking..." : "Opponent's Turn")}
+            </span>
           </div>
         )}
       </div>
 
       {/* Sticks display */}
-      <div className="bg-gray-800 p-6 rounded-xl">
+      <div className="glass p-6 rounded-xl">
         <div className="flex flex-wrap justify-center gap-2 max-w-xs">
           {Array.from({ length: sticks }).map((_, i) => (
-            <div key={i} className="w-2 h-16 bg-amber-600 rounded-full shadow-lg" />
+            <div key={i} className="w-2 h-16 bg-gradient-to-b from-amber-500 to-amber-700 rounded-full shadow-lg" />
           ))}
         </div>
         <div className="text-center mt-4 text-2xl font-bold text-amber-500">
