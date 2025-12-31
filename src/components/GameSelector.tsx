@@ -1,7 +1,7 @@
 import React from 'react';
-import { Grid3X3, Circle, Hand, Minus, Coins, Target, Users, Cpu, Sparkles } from 'lucide-react';
+import { Grid3X3, Circle, Hand, Minus, Target, Users, Cpu, Sparkles, Disc, Grid3x3 as GoIcon, Box, Gem } from 'lucide-react';
 
-export type GameType = 'tictactoe' | 'connect4' | 'rps' | 'nim' | 'coin' | 'guess';
+export type GameType = 'tictactoe' | 'connect4' | 'rps' | 'nim' | 'guess' | 'reversi' | 'go' | 'mancala' | 'dots';
 
 interface GameSelectorProps {
   onSelectGame: (game: GameType) => void;
@@ -45,21 +45,48 @@ const games = [
     players: '1-2',
   },
   {
-    id: 'coin' as GameType,
-    name: 'Coin Flip',
-    description: 'Guess heads or tails. First to 3!',
-    icon: Coins,
-    gradient: 'from-yellow-400 to-amber-300',
-    bgGlow: 'bg-yellow-400/20',
-    players: '1-2',
-  },
-  {
     id: 'guess' as GameType,
     name: 'Number Guess',
     description: 'Guess 1-10. Closest wins!',
     icon: Target,
     gradient: 'from-purple-500 to-pink-400',
     bgGlow: 'bg-purple-500/20',
+    players: '1-2',
+  },
+  {
+    id: 'reversi' as GameType,
+    name: 'Reversi',
+    description: 'Flip pieces to dominate the board!',
+    icon: Disc,
+    gradient: 'from-gray-600 to-gray-800',
+    bgGlow: 'bg-gray-500/20',
+    players: '1-2',
+  },
+  {
+    id: 'go' as GameType,
+    name: 'Go 9x9',
+    description: 'Ancient strategy. Capture territory!',
+    icon: GoIcon,
+    gradient: 'from-amber-600 to-yellow-500',
+    bgGlow: 'bg-amber-500/20',
+    players: '1-2',
+  },
+  {
+    id: 'mancala' as GameType,
+    name: 'Mancala',
+    description: 'Sow seeds, capture stones!',
+    icon: Gem,
+    gradient: 'from-orange-600 to-red-500',
+    bgGlow: 'bg-orange-500/20',
+    players: '1-2',
+  },
+  {
+    id: 'dots' as GameType,
+    name: 'Dots & Boxes',
+    description: 'Draw lines, complete boxes to win!',
+    icon: Box,
+    gradient: 'from-teal-500 to-cyan-400',
+    bgGlow: 'bg-teal-500/20',
     players: '1-2',
   },
 ];
@@ -141,7 +168,7 @@ const GameSelector: React.FC<GameSelectorProps> = ({ onSelectGame }) => {
       {/* Stats bar */}
       <div className="mt-12 glass rounded-2xl p-6 flex flex-wrap items-center justify-center gap-8 md:gap-16">
         <div className="text-center">
-          <div className="text-3xl font-bold gradient-text">6</div>
+          <div className="text-3xl font-bold gradient-text">9</div>
           <div className="text-xs text-gray-500 uppercase tracking-wider">Games</div>
         </div>
         <div className="text-center">

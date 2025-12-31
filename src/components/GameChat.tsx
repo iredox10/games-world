@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { databases, client } from '../lib/appwrite';
-import { MessageCircle, Send, Mic, MicOff, Phone, PhoneOff, X, Volume2, VolumeX } from 'lucide-react';
+import { MessageCircle, Send, Mic, MicOff, Phone, PhoneOff, X, Volume2, VolumeX, Smile } from 'lucide-react';
+
+// Quick emoji reactions for gaming
+const QUICK_EMOJIS = ['👍', '👎', '😂', '🔥', '💀', '🤔', '😎', '🎉', 'gg', '👏'];
 
 interface ChatMessage {
   id: string;
@@ -42,6 +45,7 @@ const GameChat: React.FC<GameChatProps> = ({ gameId, userId, opponentId, isSingl
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [showEmojis, setShowEmojis] = useState(false);
   
   // Voice chat state
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
@@ -483,6 +487,25 @@ const GameChat: React.FC<GameChatProps> = ({ gameId, userId, opponentId, isSingl
 
           {/* Input */}
           <div className="p-4 border-t border-white/10">
+            {/* Quick emoji reactions */}
+            {showEmojis && (
+              <div className="mb-3 flex flex-wrap gap-1.5 justify-center bg-white/5 rounded-xl p-2">
+                {QUICK_EMOJIS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    onClick={() => {
+                      setNewMessage(prev => prev + emoji);
+                      setShowEmojis(false);
+                    }}
+                    className="w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-lg transition-all hover:scale-110"
+                    title={emoji}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
+            
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -490,6 +513,14 @@ const GameChat: React.FC<GameChatProps> = ({ gameId, userId, opponentId, isSingl
               }}
               className="flex gap-2"
             >
+              <button
+                type="button"
+                onClick={() => setShowEmojis(!showEmojis)}
+                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${showEmojis ? 'bg-indigo-500/30 text-indigo-400' : 'bg-white/10 text-gray-400 hover:bg-white/20 hover:text-white'}`}
+                title="Quick reactions"
+              >
+                <Smile className="w-5 h-5" />
+              </button>
               <input
                 type="text"
                 value={newMessage}

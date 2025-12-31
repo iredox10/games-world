@@ -6,13 +6,17 @@ import GameBoard from './components/GameBoard';
 import ConnectFourBoard from './components/ConnectFourBoard';
 import RPSBoard from './components/RPSBoard';
 import NimBoard from './components/NimBoard';
-import CoinFlipBoard from './components/CoinFlipBoard';
 import GuessBoard from './components/GuessBoard';
+import ReversiBoard from './components/ReversiBoard';
+import GoBoard from './components/GoBoard';
+import MancalaBoard from './components/MancalaBoard';
+import DotsBoxesBoard from './components/DotsBoxesBoard';
 import PlayerProfile from './components/PlayerProfile';
 import Leaderboard from './components/Leaderboard';
 import GameHistory from './components/GameHistory';
 import { useSounds } from './hooks/useSounds';
-import { Trophy, User, History, Volume2, VolumeX } from 'lucide-react';
+import { useOnlineStatus } from './hooks/useOnlineStatus';
+import { Trophy, User, History, Volume2, VolumeX, WifiOff } from 'lucide-react';
 
 function App() {
   const [user, setUser] = useState<any>(null);
@@ -29,6 +33,9 @@ function App() {
   
   // Sound
   const { play, toggleMute, isMuted } = useSounds();
+  
+  // Online status
+  const isOnline = useOnlineStatus();
 
   // Check for game ID in URL on mount
   useEffect(() => {
@@ -98,8 +105,11 @@ function App() {
         else if (boardData.t === 'rps') gameType = 'rps';
         else if (boardData.t === 'ttt') gameType = 'tictactoe';
         else if (boardData.t === 'nim') gameType = 'nim';
-        else if (boardData.t === 'coin') gameType = 'coin';
         else if (boardData.t === 'guess') gameType = 'guess';
+        else if (boardData.t === 'reversi') gameType = 'reversi';
+        else if (boardData.t === 'go') gameType = 'go';
+        else if (boardData.t === 'mancala') gameType = 'mancala';
+        else if (boardData.t === 'dots') gameType = 'dots';
         else if (boardData.type) {
           gameType = boardData.type;
         }
@@ -176,10 +186,16 @@ function App() {
         return <RPSBoard gameId={gameId} userId={user.$id} onQuit={handleQuit} />;
       case 'nim':
         return <NimBoard gameId={gameId} userId={user.$id} onQuit={handleQuit} />;
-      case 'coin':
-        return <CoinFlipBoard gameId={gameId} userId={user.$id} onQuit={handleQuit} />;
       case 'guess':
         return <GuessBoard gameId={gameId} userId={user.$id} onQuit={handleQuit} />;
+      case 'reversi':
+        return <ReversiBoard gameId={gameId} userId={user.$id} onQuit={handleQuit} />;
+      case 'go':
+        return <GoBoard gameId={gameId} userId={user.$id} onQuit={handleQuit} />;
+      case 'mancala':
+        return <MancalaBoard gameId={gameId} userId={user.$id} onQuit={handleQuit} />;
+      case 'dots':
+        return <DotsBoxesBoard gameId={gameId} userId={user.$id} onQuit={handleQuit} />;
       case 'tictactoe':
       default:
         return <GameBoard gameId={gameId} userId={user.$id} onQuit={handleQuit} />;
@@ -316,10 +332,17 @@ function App() {
         <footer className="glass-dark px-6 py-4 mt-auto">
           <div className="max-w-7xl mx-auto flex items-center justify-between text-sm text-gray-500">
             <p>© 2024 Game Arcade</p>
-            <p className="flex items-center gap-2">
-              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-              Online
-            </p>
+            {isOnline ? (
+              <p className="flex items-center gap-2">
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                Online
+              </p>
+            ) : (
+              <p className="flex items-center gap-2 text-amber-400">
+                <WifiOff className="w-4 h-4" />
+                Offline Mode
+              </p>
+            )}
           </div>
         </footer>
       </div>
