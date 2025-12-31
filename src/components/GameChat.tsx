@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { databases, client } from '../lib/appwrite';
 import { MessageCircle, Send, Mic, MicOff, Phone, PhoneOff, X, Volume2, VolumeX } from 'lucide-react';
 
@@ -27,6 +27,15 @@ const parseChat = (chatStr: string | undefined): ChatMessage[] => {
   }
 };
 
+// ICE servers for WebRTC
+const ICE_SERVERS: RTCConfiguration = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+  ],
+};
+
 const GameChat: React.FC<GameChatProps> = ({ gameId, userId, opponentId, isSinglePlayer }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -38,12 +47,170 @@ const GameChat: React.FC<GameChatProps> = ({ gameId, userId, opponentId, isSingl
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isDeafened, setIsDeafened] = useState(false);
-  const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [voiceStatus, setVoiceStatus] = useState<'idle' | 'connecting' | 'connected'>('idle');
+  
+  // Use refs for WebRTC to avoid stale closure issues
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const pendingCandidatesRef = useRef<RTCIceCandidate[]>([]);
+  const lastRtcTimestampRef = useRef<number>(0);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+
+  // Cleanup function for voice chat
+  const cleanupVoiceChat = useCallback(() => {
+    localStreamRef.current?.getTracks().forEach(track => track.stop());
+    peerConnectionRef.current?.close();
+    localStreamRef.current = null;
+    peerConnectionRef.current = null;
+    pendingCandidatesRef.current = [];
+    setIsVoiceEnabled(false);
+    setVoiceStatus('idle');
+  }, []);
+
+  // Create peer connection with proper event handlers
+  const createPeerConnection = useCallback((): RTCPeerConnection => {
+    // Cleanup existing connection if any
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+    }
+    
+    const pc = new RTCPeerConnection(ICE_SERVERS);
+    
+    // Handle incoming audio stream
+    pc.ontrack = (event) => {
+      console.log('Received remote track');
+      if (audioRef.current && event.streams[0]) {
+        audioRef.current.srcObject = event.streams[0];
+        setVoiceStatus('connected');
+      }
+    };
+    
+    // Handle ICE candidates
+    pc.onicecandidate = async (event) => {
+      if (event.candidate) {
+        try {
+          await databases.updateDocument('main', 'games', gameId, {
+            rtc: JSON.stringify({ 
+              type: 'ice-candidate', 
+              candidate: event.candidate.toJSON(), 
+              sender: userId,
+              timestamp: Date.now()
+            }),
+          });
+        } catch (err) {
+          console.error('Failed to send ICE candidate', err);
+        }
+      }
+    };
+    
+    pc.oniceconnectionstatechange = () => {
+      console.log('ICE connection state:', pc.iceConnectionState);
+      if (pc.iceConnectionState === 'connected') {
+        setVoiceStatus('connected');
+      } else if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+        cleanupVoiceChat();
+      }
+    };
+    
+    peerConnectionRef.current = pc;
+    return pc;
+  }, [gameId, userId, cleanupVoiceChat]);
+
+  // Handle incoming RTC signaling
+  const handleRTCSignaling = useCallback(async (rtcData: string) => {
+    try {
+      const signal = JSON.parse(rtcData);
+      
+      // Ignore own signals
+      if (signal.sender === userId) return;
+      
+      // Ignore duplicate/old signals
+      if (signal.timestamp && signal.timestamp <= lastRtcTimestampRef.current) return;
+      lastRtcTimestampRef.current = signal.timestamp || Date.now();
+
+      console.log('Received RTC signal:', signal.type);
+
+      if (signal.type === 'offer') {
+        // Someone is calling us - set up to receive the call
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          localStreamRef.current = stream;
+          
+          const pc = createPeerConnection();
+          stream.getTracks().forEach(track => pc.addTrack(track, stream));
+          
+          await pc.setRemoteDescription(new RTCSessionDescription(signal.offer));
+          
+          // Add any pending ICE candidates
+          for (const candidate of pendingCandidatesRef.current) {
+            try {
+              await pc.addIceCandidate(candidate);
+            } catch (e) {
+              console.warn('Failed to add pending candidate', e);
+            }
+          }
+          pendingCandidatesRef.current = [];
+          
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          
+          await databases.updateDocument('main', 'games', gameId, {
+            rtc: JSON.stringify({ 
+              type: 'answer', 
+              answer, 
+              sender: userId,
+              timestamp: Date.now()
+            }),
+          });
+          
+          setIsVoiceEnabled(true);
+          setVoiceStatus('connecting');
+        } catch (err) {
+          console.error('Failed to answer call', err);
+          alert('Could not access microphone. Please check permissions.');
+        }
+        
+      } else if (signal.type === 'answer') {
+        const pc = peerConnectionRef.current;
+        if (pc && pc.signalingState === 'have-local-offer') {
+          await pc.setRemoteDescription(new RTCSessionDescription(signal.answer));
+          
+          // Add any pending ICE candidates
+          for (const candidate of pendingCandidatesRef.current) {
+            try {
+              await pc.addIceCandidate(candidate);
+            } catch (e) {
+              console.warn('Failed to add pending candidate', e);
+            }
+          }
+          pendingCandidatesRef.current = [];
+          setVoiceStatus('connecting');
+        }
+        
+      } else if (signal.type === 'ice-candidate') {
+        const pc = peerConnectionRef.current;
+        const candidate = new RTCIceCandidate(signal.candidate);
+        
+        if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+          try {
+            await pc.addIceCandidate(candidate);
+          } catch (e) {
+            console.warn('Failed to add ICE candidate', e);
+          }
+        } else {
+          // Queue the candidate for later
+          pendingCandidatesRef.current.push(candidate);
+        }
+        
+      } else if (signal.type === 'hangup') {
+        cleanupVoiceChat();
+      }
+    } catch (err) {
+      console.error('RTC signaling error', err);
+    }
+  }, [userId, gameId, createPeerConnection, cleanupVoiceChat]);
 
   // Fetch initial chat and subscribe to updates
   useEffect(() => {
@@ -66,12 +233,13 @@ const GameChat: React.FC<GameChatProps> = ({ gameId, userId, opponentId, isSingl
       (response: any) => {
         if (response.payload.chat) {
           const newMessages = parseChat(response.payload.chat);
-          setMessages(newMessages);
-          
-          // Count unread if chat is closed
-          if (!isOpen && newMessages.length > messages.length) {
-            setUnreadCount(prev => prev + (newMessages.length - messages.length));
-          }
+          setMessages(prev => {
+            // Count unread if chat is closed
+            if (!isOpen && newMessages.length > prev.length) {
+              setUnreadCount(c => c + (newMessages.length - prev.length));
+            }
+            return newMessages;
+          });
         }
         
         // Handle WebRTC signaling
@@ -81,8 +249,11 @@ const GameChat: React.FC<GameChatProps> = ({ gameId, userId, opponentId, isSingl
       }
     );
 
-    return () => unsubscribe();
-  }, [gameId, isOpen]);
+    return () => {
+      unsubscribe();
+      cleanupVoiceChat();
+    };
+  }, [gameId, isOpen, handleRTCSignaling, cleanupVoiceChat]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -95,13 +266,6 @@ const GameChat: React.FC<GameChatProps> = ({ gameId, userId, opponentId, isSingl
       setUnreadCount(0);
     }
   }, [isOpen]);
-
-  // Handle remote audio stream
-  useEffect(() => {
-    if (audioRef.current && remoteStream) {
-      audioRef.current.srcObject = remoteStream;
-    }
-  }, [remoteStream]);
 
   const sendMessage = async () => {
     if (!newMessage.trim() || sending) return;
@@ -130,86 +294,59 @@ const GameChat: React.FC<GameChatProps> = ({ gameId, userId, opponentId, isSingl
     }
   };
 
-  // WebRTC Voice Chat Functions
-  const handleRTCSignaling = async (rtcData: string) => {
-    try {
-      const signal = JSON.parse(rtcData);
-      if (signal.sender === userId) return; // Ignore own signals
-
-      if (signal.type === 'offer' && peerConnection) {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.offer));
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        
-        await databases.updateDocument('main', 'games', gameId, {
-          rtc: JSON.stringify({ type: 'answer', answer, sender: userId }),
-        });
-      } else if (signal.type === 'answer' && peerConnection) {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.answer));
-      } else if (signal.type === 'ice-candidate' && peerConnection) {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate));
-      }
-    } catch (err) {
-      console.error('RTC signaling error', err);
-    }
-  };
-
   const startVoiceChat = async () => {
     try {
+      setVoiceStatus('connecting');
+      
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      setLocalStream(stream);
+      localStreamRef.current = stream;
 
-      const pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-        ],
-      });
-
+      const pc = createPeerConnection();
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
-      pc.ontrack = (event) => {
-        setRemoteStream(event.streams[0]);
-      };
-
-      pc.onicecandidate = async (event) => {
-        if (event.candidate) {
-          await databases.updateDocument('main', 'games', gameId, {
-            rtc: JSON.stringify({ type: 'ice-candidate', candidate: event.candidate, sender: userId }),
-          });
-        }
-      };
-
-      setPeerConnection(pc);
 
       // Create and send offer
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
       await databases.updateDocument('main', 'games', gameId, {
-        rtc: JSON.stringify({ type: 'offer', offer, sender: userId }),
+        rtc: JSON.stringify({ 
+          type: 'offer', 
+          offer, 
+          sender: userId,
+          timestamp: Date.now()
+        }),
       });
 
       setIsVoiceEnabled(true);
     } catch (err) {
       console.error('Failed to start voice chat', err);
+      setVoiceStatus('idle');
       alert('Could not access microphone. Please check permissions.');
     }
   };
 
-  const stopVoiceChat = () => {
-    localStream?.getTracks().forEach(track => track.stop());
-    peerConnection?.close();
-    setLocalStream(null);
-    setRemoteStream(null);
-    setPeerConnection(null);
-    setIsVoiceEnabled(false);
+  const stopVoiceChat = async () => {
+    // Notify the other party
+    try {
+      await databases.updateDocument('main', 'games', gameId, {
+        rtc: JSON.stringify({ 
+          type: 'hangup', 
+          sender: userId,
+          timestamp: Date.now()
+        }),
+      });
+    } catch (err) {
+      console.error('Failed to send hangup signal', err);
+    }
+    
+    cleanupVoiceChat();
   };
 
   const toggleMute = () => {
-    if (localStream) {
-      localStream.getAudioTracks().forEach(track => {
-        track.enabled = isMuted;
+    const stream = localStreamRef.current;
+    if (stream) {
+      stream.getAudioTracks().forEach(track => {
+        track.enabled = isMuted; // Toggle: if muted, enable; if not muted, disable
       });
       setIsMuted(!isMuted);
     }
@@ -227,7 +364,7 @@ const GameChat: React.FC<GameChatProps> = ({ gameId, userId, opponentId, isSingl
   return (
     <>
       {/* Hidden audio element for remote stream */}
-      <audio ref={audioRef} autoPlay />
+      <audio ref={audioRef} autoPlay playsInline />
 
       {/* Chat toggle button */}
       <button
@@ -294,7 +431,7 @@ const GameChat: React.FC<GameChatProps> = ({ gameId, userId, opponentId, isSingl
               ) : (
                 <button
                   onClick={startVoiceChat}
-                  disabled={!opponentId}
+                  disabled={!opponentId || voiceStatus === 'connecting'}
                   className="w-8 h-8 rounded-lg bg-green-500/20 text-green-400 flex items-center justify-center hover:bg-green-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Start voice chat"
                 >
@@ -307,9 +444,10 @@ const GameChat: React.FC<GameChatProps> = ({ gameId, userId, opponentId, isSingl
           {/* Voice chat indicator */}
           {isVoiceEnabled && (
             <div className="px-4 py-2 bg-green-500/10 border-b border-green-500/20 flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-              <span className="text-xs text-green-400">Voice chat active</span>
-              {remoteStream && <span className="text-xs text-gray-500">• Connected</span>}
+              <div className={`w-2 h-2 rounded-full ${voiceStatus === 'connected' ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`} />
+              <span className="text-xs text-green-400">
+                {voiceStatus === 'connected' ? 'Voice chat connected' : 'Connecting...'}
+              </span>
             </div>
           )}
 

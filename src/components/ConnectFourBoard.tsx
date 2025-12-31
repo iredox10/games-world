@@ -221,6 +221,94 @@ const ConnectFourBoard: React.FC<ConnectFourBoardProps> = ({ gameId, userId, onQ
         winner: winner,
         status: status,
       });
+
+      // AI move in single player mode
+      if (isSinglePlayer && status === 'playing') {
+        setTimeout(async () => {
+          const aiSymbol = 'Y'; // AI plays Yellow
+          const playerSymbol = 'R'; // Player plays Red
+          
+          // Helper to simulate a drop in a column
+          const simulateDrop = (b: string[][], col: number, symbol: string): { board: string[][], row: number } | null => {
+            for (let r = ROWS - 1; r >= 0; r--) {
+              if (b[r][col] === '') {
+                const newBoard = b.map(row => [...row]);
+                newBoard[r][col] = symbol;
+                return { board: newBoard, row: r };
+              }
+            }
+            return null;
+          };
+
+          // Find valid columns
+          const validCols: number[] = [];
+          for (let c = 0; c < COLS; c++) {
+            if (board[0][c] === '') validCols.push(c);
+          }
+          if (validCols.length === 0) return;
+
+          // Find best move
+          const findBestMove = (): number => {
+            // 1. Try to win
+            for (const col of validCols) {
+              const result = simulateDrop(board, col, aiSymbol);
+              if (result && checkWinner(result.board) === aiSymbol) return col;
+            }
+            // 2. Block player from winning
+            for (const col of validCols) {
+              const result = simulateDrop(board, col, playerSymbol);
+              if (result && checkWinner(result.board) === playerSymbol) return col;
+            }
+            // 3. Avoid moves that let player win next turn
+            const safeCols = validCols.filter(col => {
+              const result = simulateDrop(board, col, aiSymbol);
+              if (!result) return false;
+              // Check if player can win after this move
+              for (const nextCol of validCols) {
+                const playerResult = simulateDrop(result.board, nextCol, playerSymbol);
+                if (playerResult && checkWinner(playerResult.board) === playerSymbol) {
+                  return false;
+                }
+              }
+              return true;
+            });
+            const preferredCols = safeCols.length > 0 ? safeCols : validCols;
+            // 4. Prefer center columns
+            const centerPreference = [3, 2, 4, 1, 5, 0, 6];
+            for (const col of centerPreference) {
+              if (preferredCols.includes(col)) return col;
+            }
+            // 5. Random fallback
+            return preferredCols[Math.floor(Math.random() * preferredCols.length)];
+          };
+
+          const aiCol = findBestMove();
+          const dropResult = simulateDrop(board, aiCol, aiSymbol);
+          if (!dropResult) return;
+
+          const aiBoard = dropResult.board;
+
+          // Check winner after AI move
+          const aiWinnerSymbol = checkWinner(aiBoard);
+          let aiWinner = null;
+          let aiStatus = 'playing';
+
+          if (aiWinnerSymbol) {
+            aiWinner = aiWinnerSymbol === 'R' ? game.playerX : game.playerO;
+            aiStatus = 'finished';
+          } else if (isBoardFull(aiBoard)) {
+            aiWinner = 'draw';
+            aiStatus = 'finished';
+          }
+
+          await databases.updateDocument('main', 'games', gameId, {
+            board: serializeBoardData(game.board, aiBoard),
+            turn: game.playerX, // Back to player's turn
+            winner: aiWinner,
+            status: aiStatus,
+          });
+        }, 800);
+      }
     } catch (err) {
       console.error("Move failed", err);
     } finally {

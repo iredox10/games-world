@@ -172,7 +172,76 @@ const GameBoard: React.FC<GameBoardProps> = ({ gameId, userId, onQuit }) => {
         winner: winner,
         status: status,
       });
-      // Realtime will update the UI
+
+      // AI move in single player mode
+      if (isSinglePlayer && status === 'playing') {
+        setTimeout(async () => {
+          // AI plays as 'O'
+          const aiSymbol = 'O';
+          const playerSymbol = 'X';
+          
+          // Find the best move for AI
+          const findBestMove = (currentBoard: string[]): number => {
+            // 1. Try to win
+            for (let i = 0; i < 9; i++) {
+              if (currentBoard[i] === '') {
+                const testBoard = [...currentBoard];
+                testBoard[i] = aiSymbol;
+                if (checkWinner(testBoard) === aiSymbol) return i;
+              }
+            }
+            // 2. Block player from winning
+            for (let i = 0; i < 9; i++) {
+              if (currentBoard[i] === '') {
+                const testBoard = [...currentBoard];
+                testBoard[i] = playerSymbol;
+                if (checkWinner(testBoard) === playerSymbol) return i;
+              }
+            }
+            // 3. Take center if available
+            if (currentBoard[4] === '') return 4;
+            // 4. Take a corner
+            const corners = [0, 2, 6, 8];
+            const availableCorners = corners.filter(i => currentBoard[i] === '');
+            if (availableCorners.length > 0) {
+              return availableCorners[Math.floor(Math.random() * availableCorners.length)];
+            }
+            // 5. Take any available edge
+            const edges = [1, 3, 5, 7];
+            const availableEdges = edges.filter(i => currentBoard[i] === '');
+            if (availableEdges.length > 0) {
+              return availableEdges[Math.floor(Math.random() * availableEdges.length)];
+            }
+            // Fallback: first empty cell
+            return currentBoard.findIndex(cell => cell === '');
+          };
+
+          const aiMove = findBestMove(board);
+          if (aiMove === -1) return; // No moves available
+
+          board[aiMove] = aiSymbol;
+
+          // Check winner after AI move
+          const aiWinnerSymbol = checkWinner(board);
+          let aiWinner = null;
+          let aiStatus = 'playing';
+
+          if (aiWinnerSymbol) {
+            aiWinner = aiWinnerSymbol === 'X' ? game.playerX : game.playerO;
+            aiStatus = 'finished';
+          } else if (!board.includes('')) {
+            aiWinner = 'draw';
+            aiStatus = 'finished';
+          }
+
+          await databases.updateDocument('main', 'games', gameId, {
+            board: serializeBoardData(game.board, board),
+            turn: game.playerX, // Back to player's turn
+            winner: aiWinner,
+            status: aiStatus,
+          });
+        }, 800);
+      }
     } catch (err) {
       console.error("Move failed", err);
     } finally {
