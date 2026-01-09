@@ -4,13 +4,15 @@ import { useVoiceChat } from '../hooks/useVoiceChat';
 
 interface VoiceChatProps {
   gameId: string;
+  userId: string;
   isSinglePlayer: boolean;
 }
 
-const VoiceChat: React.FC<VoiceChatProps> = ({ gameId, isSinglePlayer }) => {
+const VoiceChat: React.FC<VoiceChatProps> = ({ gameId, userId, isSinglePlayer }) => {
   const [isActive, setIsActive] = useState(false);
   const { isConnected, isMuted, error, toggleMute } = useVoiceChat({
     gameId,
+    userId,
     enabled: isActive,
   });
 

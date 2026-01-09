@@ -338,6 +338,7 @@ const GameBoard: React.FC<GameBoardProps> = ({ gameId, userId, onQuit }) => {
         />
         <VoiceChat
           gameId={gameId}
+          userId={userId}
           isSinglePlayer={isSinglePlayer}
         />
       </div>

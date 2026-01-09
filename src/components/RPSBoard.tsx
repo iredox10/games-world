@@ -371,6 +371,7 @@ const RPSBoard: React.FC<RPSBoardProps> = ({ gameId, userId, onQuit }) => {
         />
         <VoiceChat
           gameId={gameId}
+          userId={userId}
           isSinglePlayer={isSinglePlayer}
         />
       </div>

@@ -602,7 +602,7 @@ const GoBoard: React.FC<GoBoardProps> = ({ gameId, userId, onQuit }) => {
       {/* Game Controls & Voice Chat */}
       <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-3">
         <GameControls gameId={gameId} userId={userId} game={game} isSinglePlayer={isSinglePlayer} onRestart={handleRestart} />
-        <VoiceChat gameId={gameId} isSinglePlayer={isSinglePlayer} />
+        <VoiceChat gameId={gameId} userId={userId} isSinglePlayer={isSinglePlayer} />
       </div>
 
       {/* Score */}

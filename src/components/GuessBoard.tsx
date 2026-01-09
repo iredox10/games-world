@@ -295,6 +295,7 @@ const GuessBoard: React.FC<GuessBoardProps> = ({ gameId, userId, onQuit }) => {
         />
         <VoiceChat
           gameId={gameId}
+          userId={userId}
           isSinglePlayer={isSinglePlayer}
         />
       </div>

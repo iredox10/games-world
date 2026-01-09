@@ -230,6 +230,7 @@ const NimBoard: React.FC<NimBoardProps> = ({ gameId, userId, onQuit }) => {
         />
         <VoiceChat
           gameId={gameId}
+          userId={userId}
           isSinglePlayer={isSinglePlayer}
         />
       </div>

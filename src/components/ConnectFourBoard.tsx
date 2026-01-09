@@ -377,6 +377,7 @@ const ConnectFourBoard: React.FC<ConnectFourBoardProps> = ({ gameId, userId, onQ
         />
         <VoiceChat
           gameId={gameId}
+          userId={userId}
           isSinglePlayer={isSinglePlayer}
         />
       </div>
