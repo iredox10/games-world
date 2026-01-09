@@ -4,6 +4,7 @@ import { Home, Share2, Circle, Flag } from 'lucide-react';
 import GameChat from './GameChat';
 import GameControls from './GameControls';
 import GameShare from './GameShare';
+import VoiceChat from './VoiceChat';
 import { updatePlayerStats } from '../utils/playerStats';
 import { useSounds } from '../hooks/useSounds';
 
@@ -597,7 +598,12 @@ const GoBoard: React.FC<GoBoardProps> = ({ gameId, userId, onQuit }) => {
       </div>
 
       <GameShare gameId={gameId} gameName="Go" isOpen={showShare} onClose={() => setShowShare(false)} />
-      <GameControls gameId={gameId} userId={userId} game={game} isSinglePlayer={isSinglePlayer} onRestart={handleRestart} />
+      
+      {/* Game Controls & Voice Chat */}
+      <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-3">
+        <GameControls gameId={gameId} userId={userId} game={game} isSinglePlayer={isSinglePlayer} onRestart={handleRestart} />
+        <VoiceChat gameId={gameId} isSinglePlayer={isSinglePlayer} />
+      </div>
 
       {/* Score */}
       <div className="flex justify-center gap-6 glass rounded-xl p-4 text-sm">

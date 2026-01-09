@@ -4,6 +4,7 @@ import { Home, Share2, Circle } from 'lucide-react';
 import GameChat from './GameChat';
 import GameControls from './GameControls';
 import GameShare from './GameShare';
+import VoiceChat from './VoiceChat';
 import { updatePlayerStats } from '../utils/playerStats';
 import { useSounds } from '../hooks/useSounds';
 
@@ -365,14 +366,20 @@ const ConnectFourBoard: React.FC<ConnectFourBoardProps> = ({ gameId, userId, onQ
         onClose={() => setShowShare(false)}
       />
 
-      {/* Game Controls */}
-      <GameControls
-        gameId={gameId}
-        userId={userId}
-        game={game}
-        isSinglePlayer={isSinglePlayer}
-        onRestart={handleRestart}
-      />
+      {/* Game Controls & Voice Chat */}
+      <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-3">
+        <GameControls
+          gameId={gameId}
+          userId={userId}
+          game={game}
+          isSinglePlayer={isSinglePlayer}
+          onRestart={handleRestart}
+        />
+        <VoiceChat
+          gameId={gameId}
+          isSinglePlayer={isSinglePlayer}
+        />
+      </div>
 
       {/* Status */}
       <div className="text-center py-2">

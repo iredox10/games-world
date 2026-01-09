@@ -4,6 +4,7 @@ import { Home, Hand, Scissors, FileText, Share2 } from 'lucide-react';
 import GameChat from './GameChat';
 import GameControls from './GameControls';
 import GameShare from './GameShare';
+import VoiceChat from './VoiceChat';
 import { updatePlayerStats } from '../utils/playerStats';
 import { useSounds } from '../hooks/useSounds';
 
@@ -359,14 +360,20 @@ const RPSBoard: React.FC<RPSBoardProps> = ({ gameId, userId, onQuit }) => {
         onClose={() => setShowShare(false)}
       />
 
-      {/* Game Controls */}
-      <GameControls
-        gameId={gameId}
-        userId={userId}
-        game={game}
-        isSinglePlayer={isSinglePlayer}
-        onRestart={handleRestart}
-      />
+      {/* Game Controls & Voice Chat */}
+      <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-3">
+        <GameControls
+          gameId={gameId}
+          userId={userId}
+          game={game}
+          isSinglePlayer={isSinglePlayer}
+          onRestart={handleRestart}
+        />
+        <VoiceChat
+          gameId={gameId}
+          isSinglePlayer={isSinglePlayer}
+        />
+      </div>
 
       {/* Score */}
       <div className="flex justify-center gap-8 glass rounded-xl p-4">

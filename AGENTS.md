@@ -1,62 +1,57 @@
 # AGENTS.md - Coding Agent Guidelines
 
 ## Project Overview
-
-Multi-game arcade web app: React + TypeScript + Vite frontend, Appwrite BaaS backend. Games: Tic-Tac-Toe, Connect Four, Rock Paper Scissors, Nim, Coin Flip, Number Guess.
+Multi-game arcade web app: React + TypeScript + Vite frontend, Appwrite BaaS backend.
+Games: Tic-Tac-Toe, Connect Four, Rock Paper Scissors, Nim, Coin Flip, Number Guess.
 
 ## Build & Development
 
 ```bash
 npm install          # Install dependencies
-npm run dev          # Development server
-npm run build        # Build (tsc -b && vite build)
+npm run dev          # Start development server
+npm run build        # Build for production (tsc -b && vite build)
 npm run lint         # Lint with ESLint
 npm run preview      # Preview production build
 ```
 
 ### Appwrite Functions (functions/make-move/)
-
 ```bash
 cd functions/make-move
-bun install                   # Uses Bun, not npm
+bun install                   # Uses Bun
 bun run src/main.js           # Test locally
 appwrite deploy function      # Deploy to Appwrite
 ```
 
-## Project Structure
-
-```
-src/
-  components/     # React components (GameBoard, Lobby, etc.)
-  hooks/          # Custom hooks (useSounds)
-  lib/            # Appwrite client config
-  utils/          # Utility functions (playerStats)
-  App.tsx         # Main app with routing
-functions/
-  make-move/      # Appwrite serverless function (CommonJS)
-```
+## Testing
+**No test framework is configured.**
+- **Manual Testing**:
+  1. `npm run dev` to start the app.
+  2. Test gameplay solo.
+  3. Test multiplayer using two browser windows/tabs.
 
 ## Code Style
 
-### TypeScript
-
-- Target: ES2022, strict mode, no unused locals/parameters
-- JSX: react-jsx (automatic runtime)
-- Module: ESNext with bundler resolution
+### TypeScript Configuration
+- **Target**: ES2022, Strict Mode.
+- **JSX**: `react-jsx` (automatic runtime).
+- **Module Resolution**: Bundler.
 
 ### Import Order
+1. React/External: `import React, { useState } from 'react';`
+2. Appwrite Lib: `import { databases } from '../lib/appwrite';`
+3. Icons: `import { Home } from 'lucide-react';`
+4. Components: `import GameChat from './GameChat';`
+5. Hooks: `import { useSounds } from '../hooks/useSounds';`
+6. Utils: `import { playerStats } from '../utils/playerStats';`
 
-```typescript
-import React, { useState, useEffect } from 'react';  // 1. React/external
-import { databases, client } from '../lib/appwrite'; // 2. Lib
-import { Home, Share2 } from 'lucide-react';         // 3. Icons
-import GameChat from './GameChat';                    // 4. Components
-import { useSounds } from '../hooks/useSounds';       // 5. Hooks
-import { updatePlayerStats } from '../utils/playerStats'; // 6. Utils
-```
+### Naming Conventions
+- **Components**: PascalCase (e.g., `GameBoard.tsx`)
+- **Hooks**: camelCase + "use" (e.g., `useSounds.ts`)
+- **Utils/Functions**: camelCase (e.g., `playerStats.ts`)
+- **Interfaces**: PascalCase (e.g., `GameBoardProps`)
+- **Constants**: UPPER_SNAKE_CASE (e.g., `MAX_PLAYERS`)
 
 ### Component Pattern
-
 ```typescript
 interface GameBoardProps {
   gameId: string;
@@ -66,43 +61,41 @@ interface GameBoardProps {
 
 const GameBoard: React.FC<GameBoardProps> = ({ gameId, userId, onQuit }) => {
   const [game, setGame] = useState<any>(null);
-  // ...
+  
+  // Hooks & Logic...
+
+  return (
+    <div className="glass">...</div>
+  );
 };
 
 export default GameBoard;
 ```
 
-### Naming Conventions
-
-| Type | Convention | Example |
-|------|------------|---------|
-| Components | PascalCase | GameBoard.tsx |
-| Hooks | camelCase + "use" | useSounds.ts |
-| Utils | camelCase | playerStats.ts |
-| Interfaces | PascalCase + suffix | GameBoardProps |
-| Constants | UPPER_SNAKE_CASE | ROWS, COLS |
+### Styling (Tailwind CSS v4)
+- Use `@tailwindcss/vite` plugin.
+- Custom utility classes: `glass`, `glass-dark`, `gradient-text`, `shimmer`.
+- **Theme**: Dark mode with indigo/purple gradients.
+- **Responsive**: Mobile-first with `sm:` breakpoints.
 
 ### Error Handling
-
 ```typescript
 try {
-  const doc = await databases.getDocument('main', 'games', gameId);
-  setGame(doc);
+  await databases.updateDocument(...);
 } catch (err) {
-  console.error("Failed to fetch game", err);
-  alert("Error message");  // Simple user feedback
+  console.error("Action failed", err);
+  // Show simple user feedback if necessary
 }
 ```
 
-### Styling
+## Appwrite Integration
 
-- Tailwind CSS v4 via @tailwindcss/vite plugin
-- Custom classes: `glass`, `glass-dark`, `gradient-text`, `shimmer`
-- Dark theme with indigo/purple gradients
-- Mobile-first with `sm:` breakpoints
+### Configuration
+- **Database**: `main`
+- **Collections**: `games`, `players`
+- **Auth**: Anonymous sessions created automatically.
 
 ### Realtime Subscriptions
-
 ```typescript
 useEffect(() => {
   const unsubscribe = client.subscribe(
@@ -113,73 +106,21 @@ useEffect(() => {
 }, [gameId]);
 ```
 
-### Game State Serialization
-
-Compact JSON format (Appwrite 100-char limit):
-
-```typescript
-// Tic-Tac-Toe: {t:'ttt', d:[9 cells]}
-// Connect Four: {t:'c4', d:'42 comma-separated cells'}
-// RPS: {t:'rps', d:{p1:null,p2:null,s1:0,s2:0,r:0,w:null}}
-
-// Single-player detection
-const isSinglePlayer = game.playerO === `${userId}-O`;
-```
-
-## Appwrite Backend
-
-- Database ID: `main`
-- Collections: `games`, `players`
-- Anonymous auth creates sessions automatically
-- Permissions: any user can read/update games (for multiplayer)
-
-### Function Pattern (CommonJS)
-
-```javascript
-const sdk = require("node-appwrite");
-
-module.exports = async function (context) {
-  const { req, res, log, error } = context;
-  
-  const client = new sdk.Client()
-    .setEndpoint(process.env.APPWRITE_FUNCTION_ENDPOINT)
-    .setProject(process.env.APPWRITE_FUNCTION_PROJECT_ID)
-    .setKey(process.env.APPWRITE_API_KEY);
-
-  const payload = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-  const userId = req.headers["x-appwrite-user-id"];
-  
-  return res.json({ success: true });
-};
-```
-
-## Testing
-
-No test framework. Manual testing:
-1. `npm run dev` - Start dev server
-2. Solo game - Test gameplay alone
-3. Two browser tabs - Test multiplayer
-
-## Adding a New Game
-
-1. Create `src/components/NewGameBoard.tsx`
-2. Add game type to `GameSelector.tsx`
-3. Add board format to `Lobby.tsx` getInitialBoard()
-4. Add case to `App.tsx` renderGameBoard()
-
-## Sounds
-
-```typescript
-import { useSounds } from '../hooks/useSounds';
-const { play } = useSounds();
-play('move');  // 'move' | 'win' | 'lose' | 'draw' | 'click' | 'notification' | 'join'
-```
+### Game State (Compact JSON)
+Due to Appwrite limits, use compact keys for game board data:
+- Tic-Tac-Toe: `{ t: 'ttt', d: [...] }`
+- Connect Four: `{ t: 'c4', d: '...' }`
+- **Single Player Check**: `const isSinglePlayer = game.playerO === userId + '-O';`
 
 ## Environment Variables
-
 ```env
 VITE_APPWRITE_ENDPOINT=https://fra.cloud.appwrite.io/v1
 VITE_APPWRITE_PROJECT_ID=<project-id>
 ```
+*Never commit `.env` files.*
 
-Do not commit `.env` files (contains API keys).
+## Adding a New Game
+1. Create `src/components/NewGameBoard.tsx`.
+2. Add game type to `GameSelector.tsx`.
+3. Add initial board state to `Lobby.tsx`.
+4. Add rendering logic to `App.tsx`.

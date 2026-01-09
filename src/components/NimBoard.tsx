@@ -4,6 +4,7 @@ import { Home, Minus, Share2 } from 'lucide-react';
 import GameChat from './GameChat';
 import GameControls from './GameControls';
 import GameShare from './GameShare';
+import VoiceChat from './VoiceChat';
 import { updatePlayerStats } from '../utils/playerStats';
 import { useSounds } from '../hooks/useSounds';
 
@@ -218,14 +219,20 @@ const NimBoard: React.FC<NimBoardProps> = ({ gameId, userId, onQuit }) => {
         onClose={() => setShowShare(false)}
       />
 
-      {/* Game Controls */}
-      <GameControls
-        gameId={gameId}
-        userId={userId}
-        game={game}
-        isSinglePlayer={isSinglePlayer}
-        onRestart={handleRestart}
-      />
+      {/* Game Controls & Voice Chat */}
+      <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-3">
+        <GameControls
+          gameId={gameId}
+          userId={userId}
+          game={game}
+          isSinglePlayer={isSinglePlayer}
+          onRestart={handleRestart}
+        />
+        <VoiceChat
+          gameId={gameId}
+          isSinglePlayer={isSinglePlayer}
+        />
+      </div>
 
       {/* Info */}
       <div className="text-gray-500 text-sm text-center">Take 1-3 sticks. Don't take the last one!</div>
